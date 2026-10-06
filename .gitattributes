@@ -1,0 +1,10 @@
+# Windows line endings for anything Windows runs.
+#
+# Without this, Git ships these files with Unix line endings. A .bat with LF
+# endings behaves unpredictably when double-clicked on Windows - the August
+# package went out that way. Verify after publishing by downloading the zip
+# from GitHub and running `file` on a .bat: it must say CRLF.
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.txt text eol=crlf
+*.sql text eol=crlf

@@ -1,0 +1,224 @@
+============================================================
+ HCIS - PUT THIS BOX BACK AFTER A DATABASE RESTORE
+ Government box. 6 October 2026.
+============================================================
+
+IF YOU ARE READING THIS BECAUSE NOBODY CAN LOG IN
+
+  Double-click            PUT-HCIS-BACK.bat
+  Then double-click       STEP-2-reload-api.bat
+
+  That is the whole job. Everything below is explanation.
+
+
+------------------------------------------------------------
+ WHAT THIS IS FOR
+------------------------------------------------------------
+
+The government data centre is restoring a database over hcis_db before the
+move to the production server.
+
+A restore does exactly what it says: the database that arrives replaces the
+one that is there. That is not a fault, and nothing in this package is a
+criticism of it. It does mean that everything done on the database side since
+August goes with it:
+
+  * the thirteen database updates, including all of the Needs Assessment
+    (NARS) tables
+  * THE TOKEN SIGNING KEY
+  * every account
+  * the change that stopped the whole database being readable by anyone who
+    had not signed in
+
+The signing key is the one that bites first. From update 31 onwards, signing
+in issues a signed token, and the database refuses to issue one it cannot
+sign. With the key gone, EVERY password is refused - including correct ones -
+and the screen says only that the username or password was not recognised.
+
+So the symptom of an unannounced restore is: nobody can log in, and nothing
+on screen explains why. It looks like the system is broken. It is not. It is
+missing one row.
+
+This package exists so that putting it right does not depend on me being
+told the restore happened, or on me being awake when it does.
+
+
+------------------------------------------------------------
+ THE THREE FILES YOU MIGHT USE
+------------------------------------------------------------
+
+WHAT-IS-MISSING.bat
+  Reads only. Changes nothing. Safe at any time, including while people are
+  working, and safe before or after a restore.
+
+  Run this if you are not sure whether anything is wrong. It prints a list of
+  what is on the box, item by item, and then one sentence saying whether
+  anything needs doing.
+
+PUT-HCIS-BACK.bat
+  The repair. In order: report what is there, refuse if it is not HCIS, back
+  up, apply the thirteen updates, install the signing key, make sure the
+  accounts exist, load the assessment records if the data file is present,
+  then prove sign-in works and show what changed.
+
+  Safe to run when nothing is wrong. Safe to run twice, or five times.
+
+RESET-A-PASSWORD.bat
+  One account, deliberately. See "about the accounts" below.
+
+STEP-2-reload-api.bat
+  Run after PUT-HCIS-BACK.bat. NOT OPTIONAL - see below.
+
+
+------------------------------------------------------------
+ WHY STEP 2 IS NOT OPTIONAL
+------------------------------------------------------------
+
+PostgREST reads the shape of the database once, when it starts, and then
+answers from what it learned. Until it is told to look again, the updates are
+in place and the screens carry on as though they are not - which looks like
+the repair did not work.
+
+STEP-2-reload-api.bat tells it to look again. It takes a second.
+
+
+------------------------------------------------------------
+ IT APPLIES ALL THIRTEEN UPDATES EVERY TIME, ON PURPOSE
+------------------------------------------------------------
+
+Every one of the thirteen is written so that applying it a second time does
+nothing - and that was tested, not assumed.
+
+So this does not try to work out which ones are missing and apply only those.
+It applies all of them, every time.
+
+That is deliberate. A cleverer version that skipped the ones it believed were
+already in place would skip the wrong one the day one of its tests was wrong,
+and the one it skipped would be the one holding the door shut. Two of those
+tests WERE wrong while I was building this - they reported an update as
+present when it was not. I found them by applying the updates one at a time
+and watching which test changed its answer. Applying all thirteen costs about
+a minute and cannot make that mistake.
+
+The before-and-after list is for you to read. The script does not make any
+decision based on it.
+
+
+------------------------------------------------------------
+ IF THE RESTORE PUT SOMETHING ELSE HERE
+------------------------------------------------------------
+
+There are two very different things that both get described as a restore:
+
+  (a) an older copy of HCIS - this package is exactly the right tool
+  (b) the OLD system's database, or a conversion of it - this package is the
+      wrong tool and applying it would make a mess of both
+
+PUT-HCIS-BACK.bat checks before it touches anything. If the tables HCIS
+cannot work without are not there, it stops, changes nothing, writes no
+backup, and prints a list of what is missing. That path was tested against a
+database holding somebody else's tables: it refused, and the database was
+afterwards byte-for-byte identical.
+
+If you see that message, send me a photo of the window and run nothing else.
+
+
+------------------------------------------------------------
+ ABOUT THE ACCOUNTS
+------------------------------------------------------------
+
+It asks for ONE temporary password and uses it for all six accounts, and
+every one of them has to be changed by its owner at first sign-in. HCIS and
+NARS both have that screen, so nobody gets stranded on it.
+
+The accounts:
+
+  Evans            super administrator
+  evans.nars       Health Department - Needs Assessment
+  marylene.lucas   Health Department - Needs Assessment
+  vlmarie          Health Department - Needs Assessment
+  fiona.paulin     Health Department - Needs Assessment
+  r.burka          Health Department - Needs Assessment
+
+No password is written in any file in this package. The package is published,
+and four of those are live government accounts.
+
+AN ACCOUNT THAT IS ALREADY HERE AND WORKING IS LEFT COMPLETELY ALONE. Its
+password is not changed. That is on purpose: overwriting a password somebody
+is using locks that person out, and the only clue would be a line on a screen
+that has already scrolled past.
+
+At the end it lists, by name, which accounts take the temporary password you
+typed and which kept their own. If nobody knows the password for one that
+kept its own, that is what RESET-A-PASSWORD.bat is for.
+
+Note on the Needs Assessment module: NARS checks the GROUP, not the job
+title. An account that is not in the Health group is refused even if it is a
+super administrator. That is correct - the module belongs to the Health
+Department - but it means a correct password can produce a refusal that reads
+like a broken install.
+
+
+------------------------------------------------------------
+ THE ASSESSMENT RECORDS - AND WHY THEY ARE NOT IN HERE
+------------------------------------------------------------
+
+34 people assessed, 36 assessments, 677 answers given in those people's own
+homes, and 3 home visits. Everything else in this package rebuilds
+structure. This is the only part that carries work, and no script can
+regenerate it - it is in the NARS database and nowhere else. No spreadsheet
+has it.
+
+The data file is NOT in this package and will not be. It holds real names,
+real national identity numbers and real answers about people's health, and
+this package is published on the internet. That file is carried between the
+two machines by hand and deleted afterwards.
+
+So: PUT-HCIS-BACK.bat looks in the nars-data folder for a file called
+nars_records_YYYYMMDD.sql. If it is not there it says so, skips that step,
+and finishes everything else - people can sign in without it. Put the file in
+that folder and run it again and it picks up where it left off.
+
+The loader refuses to run if this box already holds assessment rows, so it
+cannot put an older snapshot over newer work.
+
+Two things it reports honestly rather than hiding:
+
+  * Who assessed, who released, who visited: those point at accounts on the
+    other machine, and the same person has a different internal id here. Any
+    reference that does not resolve is set to NULL and the number is printed.
+    The assessments themselves are untouched.
+
+  * An assessment already released into HCIS on the other box shows as
+    released here with nothing on the HCIS side yet, because releasing is
+    what creates the beneficiary record and that belongs to HCIS's own data.
+    The loader lists those by name. One button each in the Needs Assessment
+    screen puts it right, and that is better done by a person who can see the
+    result than by a script writing into beneficiary records.
+
+Tested against the real records before this was shipped: all 34, 36, 677 and
+3 arrived, no orphans, and every assessment's score, percentage, band and
+hours figure came out identical to the source - checked row by row, because
+those numbers decide how many hours of care a person is assessed as needing.
+
+
+------------------------------------------------------------
+ THE DATABASE PASSWORD
+------------------------------------------------------------
+
+None of these scripts contain it. The first one you run will ask once, and
+offer to save it on this machine so nothing asks again. SET-DB-PASSWORD.bat
+does the same thing on its own.
+
+It is the POSTGRES password, not your HCIS login.
+
+
+------------------------------------------------------------
+ IF SOMETHING GOES WRONG
+------------------------------------------------------------
+
+It backs up before it changes anything and refuses to go on without one. If
+any step fails, it stops there, tells you which step, and prints the exact
+command that puts the box back as it was.
+
+Send me a photo of the window. Everything in it is written to be read.
