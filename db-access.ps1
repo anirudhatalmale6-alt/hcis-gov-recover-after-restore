@@ -36,10 +36,47 @@ function Set-DbPassword {
 
     function Note($m, $c = 'Gray') { if (-not $Quiet) { Write-Host "  $m" -ForegroundColor $c } }
 
-    # 1. already set for this window
+    # ---- one place that answers "does this password actually work?" --------
+    #
+    # Every route into $env:PGPASSWORD goes through this. The first version of
+    # this fix only tested the password somebody TYPED, and went on trusting
+    # whatever was in the saved file - which was the exact thing that had just
+    # wasted an hour on the government box. Half a fix is its own kind of bug.
+    function Test-DbPassword {
+        # HCIS_PGBIN first: it lets this be TESTED, and it covers a box where
+        # PostgreSQL sits somewhere unusual. Without it the search below only
+        # matches on Windows, so the check silently did not run at all.
+        $pgbin = $null
+        if ($env:HCIS_PGBIN -and (Test-Path -LiteralPath $env:HCIS_PGBIN -ErrorAction SilentlyContinue)) {
+            $pgbin = $env:HCIS_PGBIN
+        } else {
+            foreach ($cand in @('C:\PostgreSQL\16\bin', 'C:\PostgreSQL\17\bin',
+                                'C:\Program Files\PostgreSQL\16\bin',
+                                'C:\Program Files\PostgreSQL\17\bin')) {
+                $probe = $cand.TrimEnd('\') + '\psql.exe'
+                try { if (Test-Path -LiteralPath $probe -ErrorAction SilentlyContinue) { $pgbin = $cand; break } } catch { }
+            }
+        }
+        # No psql means this cannot be answered here. Say "cannot tell" rather
+        # than "fine" - the caller carries on and the real command reports the
+        # real error, which is better than a confident wrong yes.
+        if (-not $pgbin) { return $null }
+
+        $exe = Join-Path $pgbin 'psql'
+        if (-not (Test-Path -LiteralPath $exe -ErrorAction SilentlyContinue)) {
+            $exe = Join-Path $pgbin 'psql.exe'
+        }
+        if (-not (Test-Path -LiteralPath $exe -ErrorAction SilentlyContinue)) { return $null }
+
+        $dbName = if ($env:HCIS_DB) { $env:HCIS_DB } else { 'hcis_db' }
+        & $exe -U postgres -d $dbName -c 'select 1' *> $null
+        return ($LASTEXITCODE -eq 0)
+    }
+
+    # 1. already set for this window - trusted, because whoever set it meant to
     if ($env:PGPASSWORD) { return $true }
 
-    # 2. saved on this machine
+    # 2. saved on this machine - READ, THEN TESTED. Never trusted on sight.
     $file = Get-DbPasswordPath
     if (Test-Path -LiteralPath $file) {
         $saved = (Get-Content -LiteralPath $file -Raw -ErrorAction SilentlyContinue)
@@ -48,9 +85,20 @@ function Set-DbPassword {
             # password with a stray newline on the end is simply the wrong
             # password - with no error that says so.
             $env:PGPASSWORD = $saved.Trim("`r", "`n", " ", "`t")
-            if ($env:PGPASSWORD) { Note "Using the database password saved in $file" ; return $true }
+            if ($env:PGPASSWORD) {
+                $ok = Test-DbPassword
+                if ($ok -eq $false) {
+                    Note "The password saved in $file is NOT accepted by the database." 'Red'
+                    Note 'Ignoring it and asking you instead. Delete that file when you have a moment.' 'Yellow'
+                    $env:PGPASSWORD = ''
+                } else {
+                    Note "Using the database password saved in $file"
+                    return $true
+                }
+            }
+        } else {
+            Note "$file is empty - ignoring it." 'Yellow'
         }
-        Note "$file is empty - ignoring it." 'Yellow'
     }
 
     # 3. ask
@@ -71,53 +119,20 @@ function Set-DbPassword {
         return $false
     }
 
-    # ---- PROVE IT WORKS BEFORE OFFERING TO SAVE IT -------------------------
-    #
-    # This used to offer to save whatever was typed, without checking. On the
-    # government box on 8 October the password typed was wrong; it was saved
-    # anyway, and from then on every run read the bad password out of the file
-    # and failed WITHOUT asking - so the obvious fix, "run it again and type it
-    # carefully", could not work and there was no way to tell why.
-    #
-    # Checking first costs one round trip. A saved wrong password costs
-    # somebody an afternoon.
-    if (-not $Quiet) {
-        # HCIS_PGBIN first: it lets this be TESTED, and it covers a box where
-        # PostgreSQL sits somewhere unusual. Without it the loop below only
-        # matches on Windows, so the verification silently did not run at all
-        # when I tried to prove it worked.
-        $pgbin = $null
-        if ($env:HCIS_PGBIN -and (Test-Path -LiteralPath $env:HCIS_PGBIN -ErrorAction SilentlyContinue)) {
-            $pgbin = $env:HCIS_PGBIN
-        } else {
-            foreach ($cand in @('C:\PostgreSQL\16\bin', 'C:\PostgreSQL\17\bin',
-                                'C:\Program Files\PostgreSQL\16\bin',
-                                'C:\Program Files\PostgreSQL\17\bin')) {
-                $probe = $cand.TrimEnd('\') + '\psql.exe'
-                try { if (Test-Path -LiteralPath $probe -ErrorAction SilentlyContinue) { $pgbin = $cand; break } } catch { }
-            }
-        }
-        if ($pgbin) {
-            $psqlExe = Join-Path $pgbin ('psql' + $(if ($IsLinux -or $IsMacOS) { '' } else { '.exe' }))
-            if (-not (Test-Path -LiteralPath $psqlExe -ErrorAction SilentlyContinue)) {
-                $psqlExe = $pgbin.TrimEnd('\','/') + '\psql.exe'
-            }
-            $dbName = if ($env:HCIS_DB) { $env:HCIS_DB } else { 'hcis_db' }
-            & $psqlExe -U postgres -d $dbName -c 'select 1' *> $null
-            if ($LASTEXITCODE -ne 0) {
-                Write-Host ''
-                Note 'That password was not accepted by the database.' 'Red'
-                Note 'Nothing has been saved and nothing has been changed.' 'Red'
-                Write-Host ''
-                Note 'It is the POSTGRES password, not your HCIS login. Try again,' 'Yellow'
-                Note 'or tell me and we will reset it on this machine - that takes' 'Yellow'
-                Note 'about ten minutes and loses no data.' 'Yellow'
-                $env:PGPASSWORD = ''
-                return $false
-            }
-            Note 'Password accepted by the database.' 'Green'
-        }
+    # Prove it before offering to keep it.
+    $ok = Test-DbPassword
+    if ($ok -eq $false) {
+        Write-Host ''
+        Note 'That password was not accepted by the database.' 'Red'
+        Note 'Nothing has been saved and nothing has been changed.' 'Red'
+        Write-Host ''
+        Note 'It is the POSTGRES password, not your HCIS login. Try again,' 'Yellow'
+        Note 'or tell me and we will reset it on this machine - that takes' 'Yellow'
+        Note 'about ten minutes and loses no data.' 'Yellow'
+        $env:PGPASSWORD = ''
+        return $false
     }
+    if ($ok -eq $true) { Note 'Password accepted by the database.' 'Green' }
 
     # offer to remember it, so this is the last time - only now that it works
     if (-not $Password) {
