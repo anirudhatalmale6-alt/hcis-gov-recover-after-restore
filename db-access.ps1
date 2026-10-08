@@ -59,7 +59,7 @@ function Set-DbPassword {
     } else {
         Write-Host ''
         Note 'This needs the DATABASE password (the postgres one).' 'Yellow'
-        Note 'It is not your HCIS login. Nothing will appear as you type.' 'Yellow'
+        Note 'It is not your HCIS login. You will see asterisks, or nothing at all - both are normal.' 'Yellow'
         $secure = Read-Host '  Database password' -AsSecureString
         $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
         try   { $env:PGPASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringAuto($ptr) }

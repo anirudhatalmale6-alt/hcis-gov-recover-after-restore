@@ -47,7 +47,7 @@ $env:PGPASSWORD = ''
 if ($Password) {
     $env:PGPASSWORD = $Password
 } else {
-    Say 'Nothing will appear as you type.' 'Yellow'
+    Say 'You will see asterisks, or nothing at all. Both are normal.' 'Yellow'
     $a = Read-Host '  Database password' -AsSecureString
     $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($a)
     try   { $env:PGPASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringAuto($ptr) }
